@@ -1,9 +1,6 @@
 const express = require('express');
-const cors = require('cors');
 const ytdl = require('ytdl-core');
 const app = express();
-
-app.use(cors());
 
 const defaultOptions = {
     requestOptions: {
@@ -12,37 +9,44 @@ const defaultOptions = {
             'Referer': 'https://www.youtube.com/'
         }
     },
-    highWaterMark: 1024 * 1024
+    highWaterMark: 1024 * 1024 // 1MB buffer
 };
 
 app.get('/', (req, res) => {
-    res.send('✅ Dokman V2 Server is Live! Direct Redirect Mode.');
+    res.send('✅ Dokman V2 Server is Live! Streaming Mode.');
 });
 
+// Endpoint استریم ویدیو
 app.get('/api/video/:id', async (req, res) => {
     try {
         const videoId = req.params.id;
         const url = `https://www.youtube.com/watch?v=${videoId}`;
 
         if (!ytdl.validateURL(url)) {
-            return res.status(400).send('Invalid YouTube URL');
+            return res.status(400).json({ error: 'Invalid YouTube URL' });
         }
 
         const info = await ytdl.getInfo(url, { ...defaultOptions, lang: 'fa' });
         const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
 
-        if (!format || !format.url) {
-            return res.status(404).send('No suitable format found');
+        if (!format) {
+            return res.status(404).json({ error: 'No suitable format found' });
         }
 
-        // هدایت مستقیم به فایل MP4 در سرور گوگل
-        res.redirect(format.url);
+        // تنظیم هدر برای پخش آنلاین
+        res.setHeader('Content-Type', format.mimeType);
+        
+        // باز کردن استریم و ارسال به کاربر
+        const stream = ytdl(url, { ...defaultOptions, format: format });
+        stream.pipe(res);
 
     } catch (error) {
         console.error('YTDL Error:', error.message);
-        res.status(500).send('Error: Server blocked by YouTube or invalid link.');
+        res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`Server running on ${PORT}`);
+});
