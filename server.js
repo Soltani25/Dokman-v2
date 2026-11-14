@@ -1,39 +1,46 @@
 const express = require('express');
 const cors = require('cors');
-const youtubedl = require('yt-dlp-exec');
+const ytdl = require('ytdl-core');
 const app = express();
 
 app.use(cors());
 
+const defaultOptions = {
+    requestOptions: {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Referer': 'https://www.youtube.com/'
+        }
+    },
+    highWaterMark: 1024 * 1024
+};
+
 app.get('/', (req, res) => {
-    res.send('✅ Dokman Server is Live and Working!');
+    res.send('✅ Dokman V2 Server is Live! Direct Redirect Mode.');
 });
 
-app.get('/download', async (req, res) => {
-    const url = req.query.url;
-    if (!url) return res.status(400).json({ error: 'لینک خالی است' });
-
+app.get('/api/video/:id', async (req, res) => {
     try {
-        console.log("Processing URL:", url);
-        
-        const output = await youtubedl(url, {
-            // فرمت 18 معمولاً یک فایل MP4 کامل (صدا+تصویر) است که برای گوشی عالی است
-            // اگر نبود، بهترین فرمت موجود را می‌گیرد
-            format: '18/best[ext=mp4]/best', 
-            getUrl: true,
-            noWarnings: true,
-            noCallHome: true,
-            // این خط جادویی باعث می‌شود یوتیوب فکر کند درخواست از یک گوشی اندروید یا iOS می‌آید
-            extractorArgs: 'youtube:player_client=android,ios,web_safari' 
-        });
-        
-        const directUrl = output.trim().split('\n')[0];
-        res.json({ url: directUrl });
-        
+        const videoId = req.params.id;
+        const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+        if (!ytdl.validateURL(url)) {
+            return res.status(400).send('Invalid YouTube URL');
+        }
+
+        const info = await ytdl.getInfo(url, { ...defaultOptions, lang: 'fa' });
+        const format = ytdl.chooseFormat(info.formats, { quality: 'highest', filter: 'audioandvideo' });
+
+        if (!format || !format.url) {
+            return res.status(404).send('No suitable format found');
+        }
+
+        // هدایت مستقیم به فایل MP4 در سرور گوگل
+        res.redirect(format.url);
+
     } catch (error) {
-        console.error('DETAILED_ERROR:', error.message);
-        // اگر باز هم بلاک شد، پیام دقیق‌تری می‌دهیم
-        res.status(500).json({ error: 'یوتیوب آی‌پی سرور را بلاک کرده است.' });
+        console.error('YTDL Error:', error.message);
+        res.status(500).send('Error: Server blocked by YouTube or invalid link.');
     }
 });
 
